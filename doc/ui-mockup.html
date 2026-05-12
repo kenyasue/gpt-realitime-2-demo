@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Voice Playground · gpt-realtime-2 · UI Mockup</title>
+  <style>
+    :root {
+      --bg: #0a0a0b;
+      --bg-elev: #131316;
+      --bg-elev-2: #1a1a1f;
+      --border: #26262c;
+      --border-strong: #34343c;
+      --text: #ededf0;
+      --text-dim: #9a9aa3;
+      --text-faint: #5e5e68;
+      --accent: #7c9cff;
+      --accent-glow: rgba(124, 156, 255, 0.18);
+      --accent-strong: #5b7dff;
+      --user: #6ee7b7;
+      --assistant: #c4b5fd;
+      --danger: #f87171;
+      --radius: 14px;
+      --radius-sm: 8px;
+      --shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+      --font: ui-sans-serif, -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 15px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+
+    body {
+      background:
+        radial-gradient(1200px 600px at 50% -200px, rgba(124, 156, 255, 0.08), transparent 60%),
+        var(--bg);
+    }
+
+    .app {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 28px 24px 64px;
+    }
+
+    /* ─── Header ──────────────────────────────────────────── */
+    header.top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 24px;
+      margin-bottom: 32px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #7c9cff 0%, #c4b5fd 100%);
+      box-shadow: 0 0 24px var(--accent-glow);
+      display: grid;
+      place-items: center;
+      color: #0a0a0b;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .brand .tag {
+      margin-left: 8px;
+      font-size: 12px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+    }
+
+    .top-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .icon-btn:hover {
+      color: var(--text);
+      border-color: var(--border-strong);
+    }
+
+    /* ─── Controls strip ─────────────────────────────────────── */
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    .control {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+
+    .control .label {
+      font-size: 11px;
+      color: var(--text-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+
+    .select {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      cursor: pointer;
+    }
+
+    .select .value {
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    .select .chev {
+      color: var(--text-faint);
+    }
+
+    .mode-toggle {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      background: var(--bg-elev-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      align-self: center;
+      height: 56px;
+    }
+
+    .mode-toggle button {
+      background: transparent;
+      border: 0;
+      color: var(--text-dim);
+      font-size: 13px;
+      padding: 0 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .mode-toggle button.active {
+      background: var(--bg);
+      color: var(--text);
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+    }
+
+    /* ─── Stage (mic button area) ────────────────────────────── */
+    .stage {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 48px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+      margin-bottom: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stage::before {
+      content: "";
+      position: absolute;
+      inset: -1px;
+      background: radial-gradient(400px 200px at 50% 100%, var(--accent-glow), transparent 70%);
+      pointer-events: none;
+    }
+
+    .status-pill {
+      position: relative;
+      z-index: 1;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-dim);
+      background: var(--bg-elev-2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 12px;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--user);
+      box-shadow: 0 0 8px var(--user);
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .mic-btn {
+      position: relative;
+      z-index: 1;
+      width: 132px;
+      height: 132px;
+      border-radius: 50%;
+      border: 1px solid var(--border-strong);
+      background: linear-gradient(180deg, var(--bg-elev-2), var(--bg-elev));
+      color: var(--text);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: transform 0.15s, box-shadow 0.3s;
+      font-family: inherit;
+    }
+
+    .mic-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+    }
+
+    .mic-btn.live {
+      background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+      border-color: transparent;
+      box-shadow: 0 0 0 6px var(--accent-glow), 0 12px 40px rgba(91, 125, 255, 0.4);
+      color: #0a0a0b;
+    }
+
+    .mic-btn .mic-ring {
+      position: absolute;
+      inset: -8px;
+      border-radius: 50%;
+      border: 1px solid var(--accent);
+      opacity: 0;
+      animation: ring 2.4s ease-out infinite;
+    }
+
+    .mic-btn.live .mic-ring { opacity: 0.6; }
+
+    @keyframes ring {
+      0% { transform: scale(0.9); opacity: 0.5; }
+      100% { transform: scale(1.4); opacity: 0; }
+    }
+
+    .mic-svg {
+      width: 44px;
+      height: 44px;
+    }
+
+    .stage-label {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+    }
+
+    .stage-label h2 {
+      margin: 0 0 4px;
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .stage-label p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+
+    /* mic meter */
+    .meter {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 22px;
+    }
+
+    .meter span {
+      width: 4px;
+      background: var(--border-strong);
+      border-radius: 2px;
+      transition: background 0.12s;
+    }
+
+    .meter span:nth-child(1) { height: 30%; }
+    .meter span:nth-child(2) { height: 60%; }
+    .meter span:nth-child(3) { height: 90%; }
+    .meter span:nth-child(4) { height: 75%; }
+    .meter span:nth-child(5) { height: 50%; }
+    .meter span:nth-child(6) { height: 35%; }
+    .meter span:nth-child(7) { height: 65%; }
+    .meter span:nth-child(8) { height: 45%; }
+    .meter span:nth-child(9) { height: 20%; }
+    .meter span:nth-child(10) { height: 15%; }
+
+    .meter.active span:nth-child(-n+5) { background: var(--accent); }
+    .meter.active span:nth-child(-n+3) { background: var(--user); }
+
+    /* ─── Transcript ─────────────────────────────────────────── */
+    .transcript {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .transcript-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .transcript-head h3 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .text-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+
+    .text-btn:hover {
+      color: var(--text);
+      border-color: var(--border-strong);
+    }
+
+    .transcript-body {
+      padding: 20px 24px;
+      max-height: 360px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .msg {
+      display: grid;
+      grid-template-columns: 80px 1fr;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .msg .who {
+      font-size: 12px;
+      color: var(--text-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding-top: 3px;
+    }
+
+    .msg.user .who { color: var(--user); }
+    .msg.assistant .who { color: var(--assistant); }
+
+    .msg .text {
+      font-size: 15px;
+      line-height: 1.55;
+      color: var(--text);
+    }
+
+    .msg.assistant .text.streaming::after {
+      content: "▊";
+      color: var(--assistant);
+      margin-left: 2px;
+      animation: blink 1s steps(1) infinite;
+    }
+
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+
+    .interrupt-marker {
+      font-size: 11px;
+      color: var(--danger);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 4px 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .interrupt-marker::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--danger);
+    }
+
+    /* ─── Footer hint ─────────────────────────────────────────── */
+    .hint {
+      margin-top: 20px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-faint);
+    }
+
+    .hint kbd {
+      font-family: var(--mono);
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-bottom-width: 2px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    /* ─── Responsive ─────────────────────────────────────────── */
+    @media (max-width: 700px) {
+      .controls { grid-template-columns: 1fr; }
+      .mode-toggle { width: 100%; justify-content: stretch; }
+      .mode-toggle button { flex: 1; }
+      .mic-btn { width: 108px; height: 108px; }
+      .msg { grid-template-columns: 1fr; gap: 4px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+
+    <!-- Header -->
+    <header class="top">
+      <div class="brand">
+        <div class="logo">V</div>
+        <h1>Voice Playground</h1>
+        <span class="tag">gpt-realtime-2</span>
+      </div>
+      <div class="top-right">
+        <button class="icon-btn" title="GitHub" aria-label="GitHub">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2 0 1.9 1.2 1.9 1.2 1.1 1.9 2.9 1.4 3.6 1 .1-.8.4-1.4.8-1.7-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.7.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.3v3.4c0 .3.2.7.8.6A12 12 0 0 0 12 .3"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Persona + voice + mode -->
+    <div class="controls">
+      <div class="control">
+        <div class="label">Persona</div>
+        <div class="select">
+          <span class="value">Friendly Assistant</span>
+          <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+      </div>
+
+      <div class="control">
+        <div class="label">Voice</div>
+        <div class="select">
+          <span class="value">cedar</span>
+          <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+      </div>
+
+      <div class="mode-toggle">
+        <button class="active">Auto VAD</button>
+        <button>Push-to-talk</button>
+      </div>
+    </div>
+
+    <!-- Stage -->
+    <section class="stage">
+      <div class="status-pill">
+        <span class="status-dot"></span>
+        Connected · 00:42
+      </div>
+
+      <button class="mic-btn live" aria-label="Stop talking">
+        <span class="mic-ring"></span>
+        <svg class="mic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="3" width="6" height="12" rx="3" />
+          <path d="M5 11a7 7 0 0 0 14 0" />
+          <line x1="12" y1="18" x2="12" y2="22" />
+        </svg>
+      </button>
+
+      <div class="stage-label">
+        <h2>Listening…</h2>
+        <p>Just talk — tap the orb to end the session</p>
+      </div>
+
+      <div class="meter active">
+        <span></span><span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+    </section>
+
+    <!-- Transcript -->
+    <section class="transcript">
+      <div class="transcript-head">
+        <h3>Transcript</h3>
+        <button class="text-btn">Copy</button>
+      </div>
+      <div class="transcript-body">
+
+        <div class="msg user">
+          <div class="who">You</div>
+          <div class="text">Hey, can you help me practice my English interview?</div>
+        </div>
+
+        <div class="msg assistant">
+          <div class="who">Assistant</div>
+          <div class="text">
+            Of course — happy to help. What role are you preparing for, and how do you'd like to start? I can throw questions at you or just chat first.
+          </div>
+        </div>
+
+        <div class="msg user">
+          <div class="who">You</div>
+          <div class="text">A product manager role at a startup. Let's just jump in.</div>
+        </div>
+
+        <div class="msg assistant">
+          <div class="who">Assistant</div>
+          <div class="text streaming">
+            Great. First question — tell me about a product you shipped recently and one decision you'd
+          </div>
+        </div>
+
+        <div class="msg user">
+          <div class="who">You</div>
+          <div class="text">
+            Actually, wait — can we do a behavioral one first?
+            <div class="interrupt-marker">interrupted assistant</div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <p class="hint">
+      Hold <kbd>Space</kbd> to talk in push-to-talk mode · <kbd>Esc</kbd> to end session
+    </p>
+
+  </div>
+</body>
+</html>
