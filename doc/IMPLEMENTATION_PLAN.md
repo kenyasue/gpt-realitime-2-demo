@@ -1,8 +1,31 @@
 # Implementation Plan — Voice Playground
 
-**Companion to:** [`PROPOSAL.md`](./PROPOSAL.md) and [`ui-mockup.html`](./ui-mockup.html)
-**Status:** boilerplate complete, feature work not started
+**Companion to:** [`PROPOSAL.md`](./PROPOSAL.md), [`ui-mockup.html`](./ui-mockup.html), [`TESTING.md`](./TESTING.md)
+**Status:** ✅ Implemented and end-to-end verified against the live `gpt-realtime-2` GA API
 **Last updated:** 2026-05-12
+
+## Completion status
+
+All 8 milestones below have shipped. The headless E2E test in `scripts/e2e-voice-test.mjs` produces the proofs documented in [`TESTING.md`](./TESTING.md).
+
+| # | Milestone | Status |
+|---|-----------|--------|
+| 1 | Persona presets + UI shell | ✅ |
+| 2 | Token-mint API route (GA endpoint `/v1/realtime/client_secrets`) | ✅ |
+| 3 | WebRTC handshake (GA endpoint `/v1/realtime/calls`) | ✅ |
+| 4 | Typed DataChannel events | ✅ |
+| 5 | Live transcript UI (handles `response.output_audio_transcript.*` GA names) | ✅ |
+| 6 | Persona/voice switching mid-session via `session.update` | ✅ |
+| 7 | Push-to-talk + interruption indicator | ✅ |
+| 8 | Mic meter, session timer, 5-min cap, error states | ✅ |
+
+### Deviations from the original plan
+
+- Used the **GA** `/v1/realtime/client_secrets` + `/v1/realtime/calls` endpoints. The original plan referenced the beta `/v1/realtime/sessions` + `/v1/realtime` URLs. `gpt-realtime-2` is GA-only, so the beta endpoints return *"API version mismatch."* — the route was rewritten to the GA shape (see [`README.md`](../README.md) for both gotchas).
+- Session config moved `turn_detection` under `audio.input` (GA shape) instead of top-level (beta shape).
+- Token-mint response is unwrapped on the server side: the client sees `{ ephemeralKey, model, expiresAt }` instead of OpenAI's raw `{ value, session: { model } }` shape, so the GA/beta change is invisible to the page.
+
+---
 
 ---
 

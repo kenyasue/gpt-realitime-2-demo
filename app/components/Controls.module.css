@@ -1,0 +1,106 @@
+.controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.control {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: block;
+  cursor: pointer;
+}
+
+.label {
+  font-size: 11px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.selectWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.select {
+  flex: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 0 24px 0 0;
+  cursor: pointer;
+  outline: none;
+}
+
+.select:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.select option {
+  background: var(--bg-elev-2);
+  color: var(--text);
+}
+
+.chev {
+  position: absolute;
+  right: 0;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.modeToggle {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  align-self: center;
+  height: 56px;
+}
+
+.modeToggle button {
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 0 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.modeToggle button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.modeToggle button:disabled {
+  cursor: not-allowed;
+  color: var(--text-faint);
+}
+
+.modeToggle .active {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+@media (max-width: 700px) {
+  .controls { grid-template-columns: 1fr; }
+  .modeToggle { width: 100%; }
+  .modeToggle button { flex: 1; }
+}

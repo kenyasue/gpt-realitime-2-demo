@@ -1,28 +1,30 @@
-.main {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 32px;
+.app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 28px 24px 64px;
 }
 
-.placeholder {
+.hint {
+  margin-top: 20px;
   text-align: center;
-  max-width: 560px;
+  font-size: 12px;
+  color: var(--text-faint);
 }
 
-.title {
-  margin: 0 0 12px;
-  font-size: 28px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  background: linear-gradient(135deg, var(--accent) 0%, var(--assistant) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.subtitle {
-  margin: 0;
+.hint kbd {
+  font-family: var(--font-mono);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
   color: var(--text-dim);
-  font-size: 14px;
+}
+
+.footer {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-faint);
 }

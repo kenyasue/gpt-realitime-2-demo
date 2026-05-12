@@ -1,0 +1,159 @@
+.stage {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+.stage::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  background: radial-gradient(400px 200px at 50% 100%, var(--accent-glow), transparent 70%);
+  pointer-events: none;
+}
+
+.pill {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.dot-live .dot {
+  background: var(--user);
+  box-shadow: 0 0 8px var(--user);
+  animation: pulse 1.8s ease-in-out infinite;
+}
+
+.dot-warn .dot {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.micBtn {
+  position: relative;
+  z-index: 1;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, var(--bg-elev-2), var(--bg-elev));
+  color: var(--text);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 0.15s, box-shadow 0.3s;
+  font-family: inherit;
+}
+
+.micBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+}
+
+.micBtn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.live {
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  border-color: transparent;
+  box-shadow: 0 0 0 6px var(--accent-glow), 0 12px 40px rgba(91, 125, 255, 0.4);
+  color: #0a0a0b;
+}
+
+.pttHold {
+  transform: scale(0.96);
+  box-shadow: 0 0 0 10px var(--accent-glow), 0 8px 24px rgba(91, 125, 255, 0.5);
+}
+
+.micRing {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  opacity: 0.6;
+  animation: ring 2.4s ease-out infinite;
+}
+
+@keyframes ring {
+  0% { transform: scale(0.9); opacity: 0.5; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+.micSvg {
+  width: 44px;
+  height: 44px;
+}
+
+.stageLabel {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+}
+
+.stageLabel h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.stageLabel p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.meter {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 22px;
+}
+
+.meter span {
+  width: 4px;
+  background: var(--border-strong);
+  border-radius: 2px;
+  transition: background 0.12s, height 0.08s;
+}
+
+.active span:nth-child(-n+5) { background: var(--accent); }
+.active span:nth-child(-n+3) { background: var(--user); }
+
+@media (max-width: 700px) {
+  .micBtn { width: 108px; height: 108px; }
+  .micSvg { width: 36px; height: 36px; }
+}
