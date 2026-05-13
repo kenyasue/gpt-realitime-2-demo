@@ -14,7 +14,7 @@
 module.exports = {
   apps: [
     {
-      name: "web",
+      name: "gpt-realtime-2-demo",
       // Call the Next.js binary directly. Avoids the npm-shim layer so PM2
       // gets correct SIGINT/SIGTERM propagation on restart.
       script: "node_modules/next/dist/bin/next",
@@ -31,7 +31,7 @@ module.exports = {
       time: true,
     },
     {
-      name: "bridge",
+      name: "gpt-realtime-2-demo-bridge",
       // Run the TypeScript bridge directly via tsx — no separate build step.
       script: "node_modules/tsx/dist/cli.mjs",
       args: "bridge/server.ts",
