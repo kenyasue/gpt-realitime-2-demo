@@ -84,6 +84,9 @@ out
 # PM2 log directory
 logs/
 
+# Twilio bridge call recordings
+recordings/
+
 # Nuxt.js build / generate output
 .nuxt
 dist

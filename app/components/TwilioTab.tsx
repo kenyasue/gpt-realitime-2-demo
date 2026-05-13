@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./TwilioTab.module.css";
 import { PERSONAS, VOICES, getPersona, type PersonaId, type VoiceId } from "@/lib/personas";
 import { Transcript, type Turn } from "./Transcript";
+import { CallHistory } from "./CallHistory";
 
 type CallState = "idle" | "dialing" | "ringing" | "connected" | "ending" | "ended" | "error";
 
@@ -17,6 +18,7 @@ export function TwilioTab() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [historyVersion, setHistoryVersion] = useState(0);
 
   const eventSourceRef = useRef<EventSource | null>(null);
 
@@ -143,12 +145,15 @@ export function TwilioTab() {
       }
     };
 
+    const onRecordingSaved = () => setHistoryVersion((v) => v + 1);
+
     es.addEventListener("status", onStatus);
     es.addEventListener("user_transcript", onUserTranscript);
     es.addEventListener("assistant_started", onAssistantStarted);
     es.addEventListener("assistant_delta", onAssistantDelta);
     es.addEventListener("assistant_done", onAssistantDone);
     es.addEventListener("speech_started", onSpeechStarted);
+    es.addEventListener("recording_saved", onRecordingSaved);
     es.addEventListener("error", onError);
 
     es.onerror = () => {
@@ -322,11 +327,13 @@ export function TwilioTab() {
 
       {errorMessage && <div className={styles.error}>{errorMessage}</div>}
 
+      <CallHistory bridgeUrl={BRIDGE_URL} refreshKey={historyVersion} />
+
       <Transcript turns={turns} onCopy={copyTranscript} onClear={clearTranscript} />
 
       <p className={styles.footnote}>
-        Bridge: <code>{BRIDGE_URL}</code> · Audio streams between Twilio and
-        OpenAI via this bridge — not stored by this app.
+        Bridge: <code>{BRIDGE_URL}</code> · Each call is recorded on the
+        bridge (caller + assistant legs) and shown above in History.
       </p>
     </div>
   );

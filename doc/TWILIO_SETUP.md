@@ -116,6 +116,35 @@ ring; answer it and talk.
   for the first few seconds, that's the WebSocket handshake; it should kick in
   within ~1 second.
 
+## Call recordings & history
+
+Every call is recorded on the bridge — both legs separately — and exposed in
+the **History** panel at the top of the Twilio tab. For each session you get:
+
+- `user.wav` — the caller's audio (decoded μ-law → PCM16 mono @ 8 kHz)
+- `assistant.wav` — the assistant's audio (same format)
+- `transcript.json` — the same turns you saw live in the transcript panel
+- `meta.json` — start/end times, persona, voice, end reason, byte counts
+
+Files are written to `${RECORDINGS_DIR}/<sessionId>/…` when the call ends.
+`RECORDINGS_DIR` defaults to `./recordings` (relative to the bridge process's
+working directory) and can be overridden in `.env.local`.
+
+Endpoints (served by the bridge on the same port as everything else):
+
+| Method | Path                                                | Purpose                              |
+|--------|-----------------------------------------------------|--------------------------------------|
+| GET    | `/api/sessions`                                     | List all recorded sessions           |
+| GET    | `/api/sessions/:id`                                 | One session's transcript + meta      |
+| GET    | `/api/sessions/:id/audio/user`                      | Inline `audio/wav` (caller leg)      |
+| GET    | `/api/sessions/:id/audio/assistant`                 | Inline `audio/wav` (assistant leg)   |
+| GET    | `/api/sessions/:id/audio/:leg?download=1`           | Same but forces `Content-Disposition: attachment` |
+| DELETE | `/api/sessions/:id`                                 | Remove a recording + transcript      |
+
+These endpoints have **no authentication** — they're open just like the SSE
+and WebSocket endpoints. Don't expose the bridge to the public internet if the
+recordings are sensitive.
+
 ## What gets sent where
 
 | Event                                            | Direction          | Purpose                       |

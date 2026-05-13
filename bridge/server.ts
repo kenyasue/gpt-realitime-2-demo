@@ -34,9 +34,20 @@ import fastifyWebsocket from "@fastify/websocket";
 import fastifyCors from "@fastify/cors";
 import Twilio from "twilio";
 import WebSocket from "ws";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { PERSONAS, type PersonaId, type VoiceId } from "../lib/personas";
+import {
+  SessionRecorder,
+  RECORDINGS_DIR,
+  deleteSession as deleteRecordedSession,
+  isSafeSessionId,
+  listSessions,
+  readSessionDetail,
+  sessionAudioPath,
+} from "./recordings";
 
 const {
   OPENAI_API_KEY,
@@ -88,6 +99,8 @@ interface BridgeSession {
   autoStarted: boolean;
   /** True once the call has ended; further events are dropped */
   ended: boolean;
+  /** Per-session recorder; finalizes to disk when the call ends. */
+  recorder: SessionRecorder;
 }
 
 const sessions = new Map<string, BridgeSession>();
@@ -128,6 +141,7 @@ fastify.get("/", async () => ({
   twilioConfigured,
   publicBridgeUrl: PUBLIC_BRIDGE_URL ?? null,
   activeSessions: sessions.size,
+  recordingsDir: RECORDINGS_DIR,
 }));
 
 /* ─── POST /api/call — start an outbound call ───────────────────────────── */
@@ -184,6 +198,13 @@ fastify.post("/api/call", async (request, reply) => {
     events: new EventEmitter(),
     autoStarted: false,
     ended: false,
+    recorder: new SessionRecorder({
+      id: sessionId,
+      to,
+      personaId,
+      personaLabel: persona.label,
+      voice,
+    }),
   };
   sessions.set(sessionId, session);
 
@@ -205,6 +226,7 @@ fastify.post("/api/call", async (request, reply) => {
       statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
     });
     session.callSid = call.sid;
+    session.recorder.meta.callSid = call.sid;
     console.log(`[bridge] call ${call.sid} dialing ${to} (session ${sessionId})`);
     emitStatus(session, "dialing");
     return reply.send({ sessionId, callSid: call.sid });
@@ -335,6 +357,66 @@ fastify.get<{ Params: { sessionId: string } }>(
   },
 );
 
+/* ─── GET /api/sessions — list recorded sessions ────────────────────────── */
+
+fastify.get("/api/sessions", async () => {
+  const items = await listSessions();
+  return { items };
+});
+
+/* ─── GET /api/sessions/:id — full transcript + meta ────────────────────── */
+
+fastify.get<{ Params: { id: string } }>(
+  "/api/sessions/:id",
+  async (request, reply) => {
+    const detail = await readSessionDetail(request.params.id);
+    if (!detail) return reply.code(404).send({ error: "no_such_recording" });
+    return detail;
+  },
+);
+
+/* ─── GET /api/sessions/:id/audio/:leg — WAV download ──────────────────── */
+
+fastify.get<{
+  Params: { id: string; leg: string };
+  Querystring: { download?: string };
+}>("/api/sessions/:id/audio/:leg", async (request, reply) => {
+  const { id, leg } = request.params;
+  if (leg !== "user" && leg !== "assistant") {
+    return reply.code(400).send({ error: "invalid_leg" });
+  }
+  const filePath = sessionAudioPath(id, leg);
+  if (!filePath) return reply.code(400).send({ error: "invalid_session_id" });
+  try {
+    const s = await stat(filePath);
+    reply.header("Content-Type", "audio/wav");
+    reply.header("Content-Length", s.size);
+    const wantsDownload = request.query.download === "1";
+    const disposition = wantsDownload ? "attachment" : "inline";
+    reply.header(
+      "Content-Disposition",
+      `${disposition}; filename="${id}-${leg}.wav"`,
+    );
+    return reply.send(createReadStream(filePath));
+  } catch {
+    return reply.code(404).send({ error: "no_such_audio" });
+  }
+});
+
+/* ─── DELETE /api/sessions/:id ──────────────────────────────────────────── */
+
+fastify.delete<{ Params: { id: string } }>(
+  "/api/sessions/:id",
+  async (request, reply) => {
+    if (!isSafeSessionId(request.params.id)) {
+      return reply.code(400).send({ error: "invalid_session_id" });
+    }
+    const ok = await deleteRecordedSession(request.params.id);
+    if (!ok) return reply.code(404).send({ error: "no_such_recording" });
+    return reply.send({ ok: true });
+  },
+);
+
 /* ─── Audio bridge ──────────────────────────────────────────────────────── */
 
 function bridgeAudio(session: BridgeSession) {
@@ -418,8 +500,11 @@ function bridgeAudio(session: BridgeSession) {
       }
       case "media": {
         const payload = msg.media?.payload;
-        if (payload && openaiWs.readyState === WebSocket.OPEN) {
-          openaiWs.send(JSON.stringify({ type: "input_audio_buffer.append", audio: payload }));
+        if (payload) {
+          session.recorder.pushUserMuLawBase64(payload);
+          if (openaiWs.readyState === WebSocket.OPEN) {
+            openaiWs.send(JSON.stringify({ type: "input_audio_buffer.append", audio: payload }));
+          }
         }
         break;
       }
@@ -450,14 +535,17 @@ function handleOpenAiMessage(session: BridgeSession, raw: string) {
     case "response.audio.delta":
     case "response.output_audio.delta": {
       const delta = (evt.delta as string | undefined) ?? "";
-      if (delta && session.twilioWs && session.streamSid) {
-        session.twilioWs.send(
-          JSON.stringify({
-            event: "media",
-            streamSid: session.streamSid,
-            media: { payload: delta },
-          }),
-        );
+      if (delta) {
+        session.recorder.pushAssistantMuLawBase64(delta);
+        if (session.twilioWs && session.streamSid) {
+          session.twilioWs.send(
+            JSON.stringify({
+              event: "media",
+              streamSid: session.streamSid,
+              media: { payload: delta },
+            }),
+          );
+        }
       }
       break;
     }
@@ -469,39 +557,49 @@ function handleOpenAiMessage(session: BridgeSession, raw: string) {
           JSON.stringify({ event: "clear", streamSid: session.streamSid }),
         );
       }
+      session.recorder.markCurrentAssistantInterrupted();
       emit(session, "speech_started", {});
       break;
     }
 
     case "conversation.item.input_audio_transcription.completed": {
-      emit(session, "user_transcript", {
-        id: evt.item_id,
-        text: evt.transcript ?? "",
-      });
+      const id = String(evt.item_id ?? "");
+      const text = (evt.transcript as string | undefined) ?? "";
+      if (id) {
+        session.recorder.upsertTurn({ id, role: "user", text, final: true });
+      }
+      emit(session, "user_transcript", { id, text });
       break;
     }
 
     case "response.created": {
       const response = evt.response as { id?: string } | undefined;
+      if (response?.id) {
+        session.recorder.upsertTurn({ id: response.id, role: "assistant", text: "", final: false });
+      }
       emit(session, "assistant_started", { id: response?.id });
       break;
     }
 
     case "response.audio_transcript.delta":
     case "response.output_audio_transcript.delta": {
-      emit(session, "assistant_delta", {
-        id: evt.response_id,
-        delta: evt.delta ?? "",
-      });
+      const id = String(evt.response_id ?? "");
+      const delta = (evt.delta as string | undefined) ?? "";
+      if (id && delta) {
+        session.recorder.appendAssistantDelta(id, delta);
+      }
+      emit(session, "assistant_delta", { id, delta });
       break;
     }
 
     case "response.audio_transcript.done":
     case "response.output_audio_transcript.done": {
-      emit(session, "assistant_done", {
-        id: evt.response_id,
-        text: evt.transcript ?? "",
-      });
+      const id = String(evt.response_id ?? "");
+      const text = (evt.transcript as string | undefined) ?? "";
+      if (id) {
+        session.recorder.upsertTurn({ id, role: "assistant", text, final: true });
+      }
+      emit(session, "assistant_done", { id, text });
       break;
     }
 
@@ -544,6 +642,16 @@ function endSession(session: BridgeSession, reason: string) {
   } catch {
     /* noop */
   }
+  // Finalize the recording before the SSE clients drain, so the UI gets a
+  // precise signal that it can refresh the history list.
+  session.recorder
+    .finalize(reason)
+    .then((meta) => {
+      if (meta) session.events.emit("event", "recording_saved", { id: meta.id });
+    })
+    .catch((err) => {
+      console.error(`[bridge] recorder.finalize failed for ${session.id}:`, err);
+    });
   // Keep the session entry around briefly so SSE clients can drain final events.
   setTimeout(() => sessions.delete(session.id), 5_000);
 }
@@ -561,6 +669,7 @@ async function start() {
   console.log(`  TWILIO_FROM_NUMBER  ${TWILIO_FROM_NUMBER ? `✓ ${TWILIO_FROM_NUMBER}` : "✗ MISSING"}`);
   console.log(`  PUBLIC_BRIDGE_URL   ${PUBLIC_BRIDGE_URL ? `✓ ${PUBLIC_BRIDGE_URL}` : "✗ MISSING"}`);
   console.log(`[bridge] twilio configured: ${twilioConfigured}`);
+  console.log(`[bridge] recordings dir:    ${RECORDINGS_DIR}`);
   if (!twilioConfigured) {
     console.log(
       "[bridge] add the missing vars above to .env or .env.local, then restart this process.",
