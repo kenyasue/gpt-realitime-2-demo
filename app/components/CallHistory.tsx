@@ -13,8 +13,7 @@ interface SessionMeta {
   personaLabel?: string;
   voice: string;
   endReason?: string;
-  hasUserAudio: boolean;
-  hasAssistantAudio: boolean;
+  hasAudio: boolean;
   durationSec: number;
   userTurns: number;
   assistantTurns: number;
@@ -146,18 +145,10 @@ export function CallHistory({ bridgeUrl, refreshKey }: CallHistoryProps) {
                 <div className={styles.detail}>
                   <div className={styles.players}>
                     <AudioLeg
-                      label="Caller"
+                      label="Call recording"
                       bridgeUrl={bridgeUrl}
                       sessionId={s.id}
-                      leg="user"
-                      available={s.hasUserAudio}
-                    />
-                    <AudioLeg
-                      label="Assistant"
-                      bridgeUrl={bridgeUrl}
-                      sessionId={s.id}
-                      leg="assistant"
-                      available={s.hasAssistantAudio}
+                      available={s.hasAudio}
                     />
                   </div>
                   <div className={styles.turnsLabel}>Transcript</div>
@@ -200,16 +191,14 @@ function AudioLeg({
   label,
   bridgeUrl,
   sessionId,
-  leg,
   available,
 }: {
   label: string;
   bridgeUrl: string;
   sessionId: string;
-  leg: "user" | "assistant";
   available: boolean;
 }) {
-  const playUrl = `${bridgeUrl}/api/sessions/${sessionId}/audio/${leg}`;
+  const playUrl = `${bridgeUrl}/api/sessions/${sessionId}/audio`;
   const downloadUrl = `${playUrl}?download=1`;
   return (
     <div className={styles.player}>

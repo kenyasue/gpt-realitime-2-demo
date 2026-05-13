@@ -1,0 +1,55 @@
+.dialBox {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+
+.dialHead {
+  margin-bottom: 8px;
+}
+
+.dialNumber {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  margin-bottom: 16px;
+  text-align: center;
+  padding: 12px 0;
+}
+
+.dialLink {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dashed var(--text-faint);
+}
+
+.dialLink:hover {
+  color: var(--accent, #7c9cff);
+  border-color: var(--accent, #7c9cff);
+}
+
+.dialMissing {
+  color: var(--danger);
+  font-size: 14px;
+  font-family: inherit;
+  letter-spacing: 0;
+}
+
+.actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+@media (max-width: 700px) {
+  .dialNumber {
+    font-size: 22px;
+  }
+  .actions :global(.btn) {
+    width: 100%;
+    justify-content: center;
+  }
+}

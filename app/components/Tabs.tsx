@@ -2,7 +2,7 @@
 
 import styles from "./Tabs.module.css";
 
-export type TabId = "home" | "twilio";
+export type TabId = "home" | "incoming" | "outgoing";
 
 interface TabsProps {
   active: TabId;
@@ -11,7 +11,8 @@ interface TabsProps {
 
 const TABS: { id: TabId; label: string; sublabel: string }[] = [
   { id: "home", label: "Home", sublabel: "Browser · WebRTC" },
-  { id: "twilio", label: "Twilio", sublabel: "Phone call" },
+  { id: "incoming", label: "Incoming Call", sublabel: "Server dials you" },
+  { id: "outgoing", label: "Outgoing Call", sublabel: "You dial Twilio" },
 ];
 
 export function Tabs({ active, onChange }: TabsProps) {

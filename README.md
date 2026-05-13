@@ -63,15 +63,16 @@ Full Twilio walk-through in [`doc/TWILIO_SETUP.md`](./doc/TWILIO_SETUP.md).
 ```
 app/
   layout.tsx                  # html shell
-  page.tsx                    # tab switch (Home / Twilio)
+  page.tsx                    # tab switch (Home / Incoming / Outgoing)
   page.module.css
   globals.css                 # CSS variables, base resets
   api/session/route.ts        # POST → mints GA ephemeral key
   components/
     Header.{tsx,module.css}
-    Tabs.{tsx,module.css}          # Home | Twilio tab strip
-    WebTab.{tsx,module.css}        # Home tab — WebRTC lifecycle
-    TwilioTab.{tsx,module.css}     # Twilio tab — dialer + SSE transcript
+    Tabs.{tsx,module.css}              # Home | Incoming | Outgoing tab strip
+    WebTab.{tsx,module.css}            # Home tab — WebRTC lifecycle
+    IncomingCallTab.{tsx,module.css}   # Server dials user — dialer + SSE transcript
+    OutgoingCallTab.{tsx,module.css}   # User dials Twilio — prepare + SSE transcript
     Controls.{tsx,module.css}      # persona / voice / mode strip
     Stage.{tsx,module.css}         # mic orb, status pill, mic meter
     Transcript.{tsx,module.css}    # two-column conversation

@@ -84,6 +84,8 @@ interface SessionConfig {
 
 interface BridgeSession {
   id: string;
+  /** Who initiated the call: "outbound" (server dials user) vs "inbound" (user dials Twilio). */
+  direction: "outbound" | "inbound";
   config: SessionConfig;
   /** Twilio Call SID, set after the REST call create() returns */
   callSid?: string;
@@ -99,11 +101,28 @@ interface BridgeSession {
   autoStarted: boolean;
   /** True once the call has ended; further events are dropped */
   ended: boolean;
+  /** Diagnostic: log once when the first assistant audio delta is forwarded. */
+  firstAssistantAudioLogged?: boolean;
+  /**
+   * True while the assistant is generating audio for the current turn. Used to
+   * suppress recording the caller's track during that window, since the
+   * caller's phone (especially on speakerphone) may echo the assistant's voice
+   * back into the inbound track and double it in the mixed recording.
+   */
+  assistantSpeaking?: boolean;
   /** Per-session recorder; finalizes to disk when the call ends. */
   recorder: SessionRecorder;
 }
 
 const sessions = new Map<string, BridgeSession>();
+/**
+ * FIFO queue of session IDs prepared by the "Outgoing Call" tab — users that
+ * have asked the bridge to wait for an inbound Twilio call. When Twilio fires
+ * the webhook for an incoming call, we dequeue the oldest entry and bind it
+ * to that call.
+ */
+const pendingIncoming: string[] = [];
+const INCOMING_TIMEOUT_MS = 5 * 60_000;
 
 /* ─── HTTP server ───────────────────────────────────────────────────────── */
 
@@ -141,8 +160,43 @@ fastify.get("/", async () => ({
   twilioConfigured,
   publicBridgeUrl: PUBLIC_BRIDGE_URL ?? null,
   activeSessions: sessions.size,
+  pendingIncoming: pendingIncoming.length,
   recordingsDir: RECORDINGS_DIR,
 }));
+
+/* ─── GET /api/config — surface dial-in number + readiness to the browser ─ */
+
+fastify.get("/api/config", async () => ({
+  twilioConfigured,
+  fromNumber: TWILIO_FROM_NUMBER ?? null,
+  publicBridgeUrl: PUBLIC_BRIDGE_URL ?? null,
+}));
+
+/* ─── GET /api/incoming/state — current armed/active inbound sessions ──── */
+/* Used by the Outgoing Call tab to restore its UI after a browser reload. */
+
+fastify.get("/api/incoming/state", async () => {
+  const items: Array<{
+    sessionId: string;
+    personaId: PersonaId;
+    voice: VoiceId;
+    state: "waiting" | "ringing" | "connected";
+  }> = [];
+  for (const s of sessions.values()) {
+    if (s.direction !== "inbound" || s.ended) continue;
+    let st: "waiting" | "ringing" | "connected";
+    if (!s.callSid) st = "waiting";
+    else if (!s.streamSid) st = "ringing";
+    else st = "connected";
+    items.push({
+      sessionId: s.id,
+      personaId: s.config.personaId,
+      voice: s.config.voice,
+      state: st,
+    });
+  }
+  return { items };
+});
 
 /* ─── POST /api/call — start an outbound call ───────────────────────────── */
 
@@ -188,6 +242,7 @@ fastify.post("/api/call", async (request, reply) => {
   const sessionId = randomUUID();
   const session: BridgeSession = {
     id: sessionId,
+    direction: "outbound",
     config: {
       personaId,
       voice,
@@ -256,6 +311,138 @@ fastify.post<{ Params: { sessionId: string } }>(
     return reply.send({ ok: true });
   },
 );
+
+/* ─── POST /api/incoming/prepare — wait for an inbound Twilio call ──────── */
+
+interface PrepareRequestBody {
+  personaId?: PersonaId;
+  voice?: VoiceId;
+}
+
+fastify.post("/api/incoming/prepare", async (request, reply) => {
+  const body = (request.body ?? {}) as PrepareRequestBody;
+  const personaId = (body.personaId ?? "assistant") as PersonaId;
+  const persona = PERSONAS.find((p) => p.id === personaId);
+  if (!persona) {
+    return reply.code(400).send({ error: "unknown_persona", message: personaId });
+  }
+  const voice = (body.voice ?? persona.defaultVoice) as VoiceId;
+
+  const sessionId = randomUUID();
+  const session: BridgeSession = {
+    id: sessionId,
+    direction: "inbound",
+    config: {
+      personaId,
+      voice,
+      instructions: persona.instructions,
+      language: persona.language,
+      autoStart: !!persona.autoStart,
+    },
+    events: new EventEmitter(),
+    autoStarted: false,
+    ended: false,
+    recorder: new SessionRecorder({
+      id: sessionId,
+      personaId,
+      personaLabel: persona.label,
+      voice,
+    }),
+  };
+  sessions.set(sessionId, session);
+  pendingIncoming.push(sessionId);
+
+  setTimeout(() => {
+    const idx = pendingIncoming.indexOf(sessionId);
+    if (idx !== -1) {
+      pendingIncoming.splice(idx, 1);
+      const s = sessions.get(sessionId);
+      if (s && !s.callSid && !s.ended) {
+        console.log(`[bridge] inbound session ${sessionId} expired waiting for call`);
+        emitStatus(s, "ended", { reason: "expired_waiting_for_call" });
+        endSession(s, "expired_waiting_for_call");
+      }
+    }
+  }, INCOMING_TIMEOUT_MS);
+
+  emitStatus(session, "waiting");
+  console.log(
+    `[bridge] inbound session ${sessionId} prepared (${persona.label} / ${voice}); queue size ${pendingIncoming.length}`,
+  );
+  return reply.send({
+    sessionId,
+    dialNumber: TWILIO_FROM_NUMBER ?? null,
+    expiresInSec: INCOMING_TIMEOUT_MS / 1000,
+  });
+});
+
+/* ─── POST /api/incoming/cancel/:sessionId ──────────────────────────────── */
+
+fastify.post<{ Params: { sessionId: string } }>(
+  "/api/incoming/cancel/:sessionId",
+  async (request, reply) => {
+    const sessionId = request.params.sessionId;
+    const idx = pendingIncoming.indexOf(sessionId);
+    if (idx !== -1) pendingIncoming.splice(idx, 1);
+    const session = sessions.get(sessionId);
+    if (!session) return reply.code(404).send({ error: "no_such_session" });
+    if (!session.callSid) {
+      // Not yet attached to a call — safe to drop entirely.
+      endSession(session, "user_cancelled");
+    }
+    return reply.send({ ok: true });
+  },
+);
+
+/* ─── Twilio webhook for inbound calls ──────────────────────────────────── */
+
+interface IncomingTwilioBody {
+  CallSid?: string;
+  From?: string;
+  To?: string;
+}
+
+fastify.all("/twiml-incoming", async (request, reply) => {
+  const body = (request.body ?? {}) as IncomingTwilioBody;
+  const sessionId = pendingIncoming.shift();
+  if (!sessionId) {
+    console.warn(
+      `[bridge] inbound call from ${body.From ?? "?"} but no pending session — rejecting`,
+    );
+    return reply.code(200).type("text/xml").send(
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="alice">No session is waiting for your call. Please open the demo, choose a persona, and tap prepare.</Say><Hangup/></Response>`,
+    );
+  }
+  const session = sessions.get(sessionId);
+  if (!session) {
+    console.warn(`[bridge] dequeued session ${sessionId} not in registry`);
+    return reply.code(200).type("text/xml").send(
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`,
+    );
+  }
+  if (body.CallSid) {
+    session.callSid = body.CallSid;
+    session.recorder.meta.callSid = body.CallSid;
+  }
+  if (body.From) {
+    session.recorder.meta.to = body.From;
+  }
+  emitStatus(session, "ringing");
+  console.log(
+    `[bridge] inbound call ${body.CallSid ?? "?"} from ${body.From ?? "?"} → session ${sessionId}`,
+  );
+
+  const wsUrl = (PUBLIC_BRIDGE_URL ?? "").replace(/^https?:\/\//, "wss://");
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="${wsUrl}/media-stream/${sessionId}">
+      <Parameter name="session" value="${sessionId}" />
+    </Stream>
+  </Connect>
+</Response>`;
+  return reply.type("text/xml").send(twiml);
+});
 
 /* ─── Twilio status callback (call progress events) ─────────────────────── */
 
@@ -375,17 +562,14 @@ fastify.get<{ Params: { id: string } }>(
   },
 );
 
-/* ─── GET /api/sessions/:id/audio/:leg — WAV download ──────────────────── */
+/* ─── GET /api/sessions/:id/audio — mixed WAV download ─────────────────── */
 
 fastify.get<{
-  Params: { id: string; leg: string };
+  Params: { id: string };
   Querystring: { download?: string };
-}>("/api/sessions/:id/audio/:leg", async (request, reply) => {
-  const { id, leg } = request.params;
-  if (leg !== "user" && leg !== "assistant") {
-    return reply.code(400).send({ error: "invalid_leg" });
-  }
-  const filePath = sessionAudioPath(id, leg);
+}>("/api/sessions/:id/audio", async (request, reply) => {
+  const { id } = request.params;
+  const filePath = sessionAudioPath(id);
   if (!filePath) return reply.code(400).send({ error: "invalid_session_id" });
   try {
     const s = await stat(filePath);
@@ -395,7 +579,7 @@ fastify.get<{
     const disposition = wantsDownload ? "attachment" : "inline";
     reply.header(
       "Content-Disposition",
-      `${disposition}; filename="${id}-${leg}.wav"`,
+      `${disposition}; filename="${id}.wav"`,
     );
     return reply.send(createReadStream(filePath));
   } catch {
@@ -466,6 +650,15 @@ function bridgeAudio(session: BridgeSession) {
         },
       }),
     );
+
+    // If Twilio's "start" event arrived before this open handler ran, the
+    // streamSid is already set but response.create was skipped (because
+    // readyState wasn't OPEN). Fire it now so autoStart personas speak.
+    if (config.autoStart && !session.autoStarted && session.streamSid) {
+      session.autoStarted = true;
+      console.log(`[bridge] autoStart (deferred) → response.create for session ${session.id}`);
+      openaiWs.send(JSON.stringify({ type: "response.create" }));
+    }
   });
 
   openaiWs.on("message", (raw) => handleOpenAiMessage(session, raw.toString()));
@@ -483,27 +676,49 @@ function bridgeAudio(session: BridgeSession) {
   if (!twilioWs) return;
 
   twilioWs.on("message", (raw) => {
-    let msg: { event?: string; start?: { streamSid?: string }; media?: { payload?: string } };
+    let msg: {
+      event?: string;
+      start?: { streamSid?: string; callSid?: string; tracks?: string[] };
+      media?: { payload?: string };
+      stop?: { reason?: string };
+    };
     try {
       msg = JSON.parse(raw.toString());
     } catch {
       return;
     }
     switch (msg.event) {
+      case "connected": {
+        console.log(`[bridge] Twilio WS connected for session ${session.id}`);
+        break;
+      }
       case "start": {
         session.streamSid = msg.start?.streamSid;
+        console.log(
+          `[bridge] Twilio stream started for session ${session.id} (streamSid=${msg.start?.streamSid}, tracks=${(msg.start?.tracks ?? []).join(",")})`,
+        );
         emitStatus(session, "connected");
         // If the persona is set to speak first, trigger a response now.
         if (config.autoStart && !session.autoStarted && openaiWs.readyState === WebSocket.OPEN) {
           session.autoStarted = true;
+          console.log(`[bridge] autoStart → response.create for session ${session.id}`);
           openaiWs.send(JSON.stringify({ type: "response.create" }));
+        } else if (config.autoStart && !session.autoStarted) {
+          console.log(
+            `[bridge] autoStart deferred — OpenAI WS not open yet (state=${openaiWs.readyState}) for session ${session.id}`,
+          );
         }
         break;
       }
       case "media": {
         const payload = msg.media?.payload;
         if (payload) {
-          session.recorder.pushUserMuLawBase64(payload);
+          // Skip recording the caller leg while the assistant is talking to
+          // avoid mic-pickup echo of the assistant doubling in mixed.wav.
+          // OpenAI still needs the live audio for VAD / barge-in.
+          if (!session.assistantSpeaking) {
+            session.recorder.pushUserMuLawBase64(payload);
+          }
           if (openaiWs.readyState === WebSocket.OPEN) {
             openaiWs.send(JSON.stringify({ type: "input_audio_buffer.append", audio: payload }));
           }
@@ -511,7 +726,9 @@ function bridgeAudio(session: BridgeSession) {
         break;
       }
       case "stop": {
-        console.log(`[bridge] Twilio stream stopped for session ${session.id}`);
+        console.log(
+          `[bridge] Twilio stream stopped for session ${session.id} (reason=${msg.stop?.reason ?? "none"})`,
+        );
         if (!session.ended) endSession(session, "twilio_stop");
         break;
       }
@@ -533,11 +750,24 @@ function handleOpenAiMessage(session: BridgeSession, raw: string) {
   const type = evt.type as string | undefined;
   if (!type) return;
 
+  // High-level events get a line; audio deltas would be too spammy.
+  if (type !== "response.audio.delta" && type !== "response.output_audio.delta" &&
+      type !== "response.audio_transcript.delta" && type !== "response.output_audio_transcript.delta") {
+    console.log(`[bridge] OpenAI → ${type} (${session.id})`);
+  }
+
   switch (type) {
     case "response.audio.delta":
     case "response.output_audio.delta": {
       const delta = (evt.delta as string | undefined) ?? "";
       if (delta) {
+        if (!session.firstAssistantAudioLogged) {
+          session.firstAssistantAudioLogged = true;
+          console.log(
+            `[bridge] first assistant audio delta — forwarding to Twilio (streamSid=${session.streamSid ?? "MISSING"}) for session ${session.id}`,
+          );
+        }
+        session.assistantSpeaking = true;
         session.recorder.pushAssistantMuLawBase64(delta);
         if (session.twilioWs && session.streamSid) {
           session.twilioWs.send(
@@ -559,6 +789,8 @@ function handleOpenAiMessage(session: BridgeSession, raw: string) {
           JSON.stringify({ event: "clear", streamSid: session.streamSid }),
         );
       }
+      // Re-enable caller-track recording so the interrupting speech is captured.
+      session.assistantSpeaking = false;
       session.recorder.markCurrentAssistantInterrupted();
       emit(session, "speech_started", {});
       break;
@@ -607,6 +839,8 @@ function handleOpenAiMessage(session: BridgeSession, raw: string) {
 
     case "response.done": {
       const response = evt.response as { id?: string } | undefined;
+      session.assistantSpeaking = false;
+      session.recorder.endAssistantBurst();
       emit(session, "response_done", { id: response?.id });
       break;
     }

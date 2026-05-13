@@ -46,13 +46,13 @@ export async function POST(req: Request) {
     mode === "ptt"
       ? null
       : {
-          type: "server_vad",
-          threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 500,
-        };
+        type: "server_vad",
+        threshold: 0.5,
+        prefix_padding_ms: 300,
+        silence_duration_ms: 500,
+      };
 
-  const transcription: { model: string; language?: string } = { model: "whisper-1" };
+  const transcription: { model: string; language?: string } = { model: "gpt-4o-transcribe" };
   if (language) transcription.language = language;
 
   const sessionRequestBody = {

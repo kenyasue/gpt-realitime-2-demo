@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import styles from "./TwilioTab.module.css";
+import styles from "./IncomingCallTab.module.css";
 import { PERSONAS, VOICES, getPersona, type PersonaId, type VoiceId } from "@/lib/personas";
 import { Transcript, type Turn } from "./Transcript";
 import { CallHistory } from "./CallHistory";
@@ -10,7 +10,7 @@ type CallState = "idle" | "dialing" | "ringing" | "connected" | "ending" | "ende
 
 const BRIDGE_URL = process.env.NEXT_PUBLIC_BRIDGE_URL || "http://localhost:5050";
 
-export function TwilioTab() {
+export function IncomingCallTab() {
   const [personaId, setPersonaId] = useState<PersonaId>("assistant");
   const [voice, setVoice] = useState<VoiceId>(getPersona("assistant").defaultVoice);
   const [phone, setPhone] = useState("");

@@ -1,11 +1,13 @@
 /**
  * Per-session recordings for the Twilio bridge.
  *
- * Audio on the wire is G.711 μ-law @ 8 kHz mono (both directions). We decode
- * to PCM16 in-memory as samples arrive, and on session end write two WAV
- * files plus a JSON transcript + metadata to:
+ * Audio on the wire is G.711 μ-law @ 8 kHz mono (both directions). Each
+ * caller frame (Twilio media event) and each assistant frame (OpenAI audio
+ * delta) is decoded to PCM16 and stamped with its arrival time. On session
+ * end the two streams are summed onto a single timeline and written as one
+ * mono PCM16 WAV:
  *
- *   ${RECORDINGS_DIR}/<sessionId>/{user.wav,assistant.wav,transcript.json,meta.json}
+ *   ${RECORDINGS_DIR}/<sessionId>/{mixed.wav,transcript.json,meta.json}
  *
  * RECORDINGS_DIR defaults to <cwd>/recordings.
  */
@@ -14,6 +16,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 
 const SAMPLE_RATE = 8000;
+const SAMPLES_PER_MS = SAMPLE_RATE / 1000; // 8
 
 export const RECORDINGS_DIR =
   process.env.RECORDINGS_DIR && process.env.RECORDINGS_DIR.length > 0
@@ -84,21 +87,34 @@ export interface SessionMeta {
   personaLabel?: string;
   voice: string;
   endReason?: string;
-  hasUserAudio: boolean;
-  hasAssistantAudio: boolean;
-  userBytes: number;
-  assistantBytes: number;
+  hasAudio: boolean;
+  audioBytes: number;
   durationSec: number;
   userTurns: number;
   assistantTurns: number;
+}
+
+interface TimedChunk {
+  pcm: Buffer;
+  offsetMs: number;
 }
 
 /* ─── In-memory recorder ────────────────────────────────────────────────── */
 
 export class SessionRecorder {
   meta: SessionMeta;
-  private userPcm: Buffer[] = [];
-  private assistantPcm: Buffer[] = [];
+  private startMs = Date.now();
+  private userChunks: TimedChunk[] = [];
+  private assistantChunks: TimedChunk[] = [];
+  /**
+   * Anchor (in ms since `startMs`) for the current assistant response burst.
+   * OpenAI delivers a response's audio chunks faster than real-time, so we
+   * can't trust per-chunk arrival timestamps for placement. Instead we set
+   * this on the first chunk of a burst and lay subsequent chunks sequentially
+   * by sample count.
+   */
+  private assistantBurstStartMs: number | null = null;
+  private assistantBurstSampleCount = 0;
   turns: RecordedTurn[] = [];
   private finalized = false;
 
@@ -118,10 +134,8 @@ export class SessionRecorder {
       personaId: init.personaId,
       personaLabel: init.personaLabel,
       voice: init.voice,
-      hasUserAudio: false,
-      hasAssistantAudio: false,
-      userBytes: 0,
-      assistantBytes: 0,
+      hasAudio: false,
+      audioBytes: 0,
       durationSec: 0,
       userTurns: 0,
       assistantTurns: 0,
@@ -131,13 +145,30 @@ export class SessionRecorder {
   pushUserMuLawBase64(b64: string): void {
     if (this.finalized || !b64) return;
     const pcm = muLawBufferToPcm16(Buffer.from(b64, "base64"));
-    this.userPcm.push(pcm);
+    this.userChunks.push({ pcm, offsetMs: Date.now() - this.startMs });
   }
 
   pushAssistantMuLawBase64(b64: string): void {
     if (this.finalized || !b64) return;
     const pcm = muLawBufferToPcm16(Buffer.from(b64, "base64"));
-    this.assistantPcm.push(pcm);
+    if (this.assistantBurstStartMs === null) {
+      this.assistantBurstStartMs = Date.now() - this.startMs;
+      this.assistantBurstSampleCount = 0;
+    }
+    const offsetMs =
+      this.assistantBurstStartMs + this.assistantBurstSampleCount / SAMPLES_PER_MS;
+    this.assistantChunks.push({ pcm, offsetMs });
+    this.assistantBurstSampleCount += pcm.length / 2;
+  }
+
+  /**
+   * Signal the end of an assistant response burst. The next assistant chunk
+   * will start a fresh burst anchored at its arrival time.
+   */
+  endAssistantBurst(): void {
+    if (this.finalized) return;
+    this.assistantBurstStartMs = null;
+    this.assistantBurstSampleCount = 0;
   }
 
   /**
@@ -184,8 +215,7 @@ export class SessionRecorder {
     if (this.finalized) return this.meta;
     this.finalized = true;
 
-    const userData = Buffer.concat(this.userPcm);
-    const assistantData = Buffer.concat(this.assistantPcm);
+    const mixed = mixChunks(this.userChunks, this.assistantChunks);
 
     this.meta.endedAt = new Date().toISOString();
     this.meta.endReason = endReason;
@@ -197,14 +227,12 @@ export class SessionRecorder {
           1000,
       ),
     );
-    this.meta.userBytes = userData.length;
-    this.meta.assistantBytes = assistantData.length;
-    this.meta.hasUserAudio = userData.length > 0;
-    this.meta.hasAssistantAudio = assistantData.length > 0;
+    this.meta.audioBytes = mixed.length;
+    this.meta.hasAudio = mixed.length > 0;
     this.meta.userTurns = this.turns.filter((t) => t.role === "user").length;
     this.meta.assistantTurns = this.turns.filter((t) => t.role === "assistant").length;
 
-    if (!this.meta.hasUserAudio && !this.meta.hasAssistantAudio && this.turns.length === 0) {
+    if (!this.meta.hasAudio && this.turns.length === 0) {
       return null;
     }
 
@@ -218,29 +246,63 @@ export class SessionRecorder {
       ),
       fs.writeFile(path.join(dir, "meta.json"), JSON.stringify(this.meta, null, 2)),
     ];
-    if (this.meta.hasUserAudio) {
+    if (this.meta.hasAudio) {
       writes.push(
         fs.writeFile(
-          path.join(dir, "user.wav"),
-          Buffer.concat([wavHeader(userData.length), userData]),
-        ),
-      );
-    }
-    if (this.meta.hasAssistantAudio) {
-      writes.push(
-        fs.writeFile(
-          path.join(dir, "assistant.wav"),
-          Buffer.concat([wavHeader(assistantData.length), assistantData]),
+          path.join(dir, "mixed.wav"),
+          Buffer.concat([wavHeader(mixed.length), mixed]),
         ),
       );
     }
     await Promise.all(writes);
 
     // Free the buffers after flushing.
-    this.userPcm = [];
-    this.assistantPcm = [];
+    this.userChunks = [];
+    this.assistantChunks = [];
     return this.meta;
   }
+}
+
+/**
+ * Sum two streams of timestamped PCM16 chunks onto a single timeline. Both
+ * streams are 8 kHz mono. The earliest chunk across both streams becomes t=0
+ * in the output.
+ */
+function mixChunks(user: TimedChunk[], assistant: TimedChunk[]): Buffer {
+  if (user.length === 0 && assistant.length === 0) return Buffer.alloc(0);
+
+  let firstMs = Infinity;
+  let lastMs = 0;
+  const considerChunk = (c: TimedChunk) => {
+    const durationMs = c.pcm.length / 2 / SAMPLES_PER_MS;
+    if (c.offsetMs < firstMs) firstMs = c.offsetMs;
+    if (c.offsetMs + durationMs > lastMs) lastMs = c.offsetMs + durationMs;
+  };
+  for (const c of user) considerChunk(c);
+  for (const c of assistant) considerChunk(c);
+
+  const totalMs = Math.max(0, lastMs - firstMs);
+  const totalSamples = Math.ceil(totalMs * SAMPLES_PER_MS);
+  const out = Buffer.alloc(totalSamples * 2);
+
+  const place = (chunks: TimedChunk[]) => {
+    for (const c of chunks) {
+      const startSample = Math.floor((c.offsetMs - firstMs) * SAMPLES_PER_MS);
+      const sampleCount = c.pcm.length / 2;
+      for (let i = 0; i < sampleCount; i++) {
+        const idx = startSample + i;
+        if (idx < 0 || idx >= totalSamples) continue;
+        const s = c.pcm.readInt16LE(i * 2);
+        const cur = out.readInt16LE(idx * 2);
+        const sum = cur + s;
+        const clipped = sum > 32767 ? 32767 : sum < -32768 ? -32768 : sum;
+        out.writeInt16LE(clipped, idx * 2);
+      }
+    }
+  };
+  place(user);
+  place(assistant);
+  return out;
 }
 
 /* ─── Filesystem helpers ────────────────────────────────────────────────── */
@@ -295,9 +357,9 @@ export async function readSessionDetail(
   }
 }
 
-export function sessionAudioPath(id: string, leg: "user" | "assistant"): string | null {
+export function sessionAudioPath(id: string): string | null {
   if (!isSafeSessionId(id)) return null;
-  return path.join(RECORDINGS_DIR, id, `${leg}.wav`);
+  return path.join(RECORDINGS_DIR, id, "mixed.wav");
 }
 
 export async function deleteSession(id: string): Promise<boolean> {
