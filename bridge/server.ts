@@ -435,7 +435,9 @@ function bridgeAudio(session: BridgeSession) {
 
   openaiWs.on("open", () => {
     console.log(`[bridge] OpenAI WS open for session ${session.id}`);
-    const transcription: { model: string; language?: string } = { model: "whisper-1" };
+    const transcription: { model: string; language?: string } = {
+      model: process.env.OPENAI_TRANSCRIBE_MODEL ?? "gpt-4o-transcribe",
+    };
     if (config.language) transcription.language = config.language;
 
     openaiWs.send(
