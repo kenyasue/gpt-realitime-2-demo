@@ -1,0 +1,28 @@
+.wrap {
+  display: block;
+}
+
+.hint {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.hint kbd {
+  font-family: var(--font-mono);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.footer {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-faint);
+}

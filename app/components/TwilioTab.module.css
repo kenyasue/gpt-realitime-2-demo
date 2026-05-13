@@ -1,0 +1,226 @@
+.wrap {
+  display: block;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.control {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: block;
+  cursor: pointer;
+}
+
+.label {
+  font-size: 11px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.selectWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.select {
+  flex: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 0 24px 0 0;
+  cursor: pointer;
+  outline: none;
+}
+
+.select:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.select option {
+  background: var(--bg-elev-2);
+  color: var(--text);
+}
+
+.chev {
+  position: absolute;
+  right: 0;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.dialer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.phoneLabel {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: block;
+}
+
+.phoneInput {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  padding: 0;
+}
+
+.phoneInput::placeholder {
+  color: var(--text-faint);
+}
+
+.phoneInput:disabled {
+  color: var(--text-dim);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0 22px;
+  height: 56px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  letter-spacing: -0.005em;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.callBtn {
+  background: linear-gradient(135deg, #7c9cff 0%, #5b7dff 100%);
+  color: #0a0a0b;
+  box-shadow: 0 0 24px var(--accent-glow);
+}
+
+.callBtn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.hangupBtn {
+  background: var(--danger);
+  color: #0a0a0b;
+}
+
+.hangupBtn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.status[data-state="dialing"] .dot,
+.status[data-state="ringing"] .dot {
+  background: #fbbf24;
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.6);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.status[data-state="connected"] .dot {
+  background: var(--user);
+  box-shadow: 0 0 12px rgba(110, 231, 183, 0.6);
+}
+
+.status[data-state="error"] .dot,
+.status[data-state="ended"] .dot {
+  background: var(--danger);
+}
+
+.sid {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.error {
+  padding: 12px 16px;
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.footnote {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.footnote code {
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@media (max-width: 700px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+  .dialer {
+    grid-template-columns: 1fr;
+  }
+  .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
