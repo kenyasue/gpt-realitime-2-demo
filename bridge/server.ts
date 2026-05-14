@@ -79,6 +79,7 @@ interface SessionConfig {
   voice: VoiceId;
   instructions: string;
   language?: string;
+  transcriptionPrompt?: string;
   autoStart: boolean;
 }
 
@@ -260,6 +261,7 @@ fastify.post("/api/call", async (request, reply) => {
       voice,
       instructions: persona.instructions,
       language: persona.language,
+      transcriptionPrompt: persona.transcriptionPrompt,
       autoStart: !!persona.autoStart,
     },
     events: new EventEmitter(),
@@ -351,6 +353,7 @@ fastify.post("/api/incoming/prepare", async (request, reply) => {
       voice,
       instructions: persona.instructions,
       language: persona.language,
+      transcriptionPrompt: persona.transcriptionPrompt,
       autoStart: !!persona.autoStart,
     },
     events: new EventEmitter(),
@@ -635,10 +638,11 @@ function bridgeAudio(session: BridgeSession) {
 
   openaiWs.on("open", () => {
     console.log(`[bridge] OpenAI WS open for session ${session.id}`);
-    const transcription: { model: string; language?: string } = {
+    const transcription: { model: string; language?: string; prompt?: string } = {
       model: process.env.OPENAI_TRANSCRIBE_MODEL ?? "gpt-4o-transcribe",
     };
     if (config.language) transcription.language = config.language;
+    if (config.transcriptionPrompt) transcription.prompt = config.transcriptionPrompt;
 
     openaiWs.send(
       JSON.stringify({
@@ -650,10 +654,17 @@ function bridgeAudio(session: BridgeSession) {
           audio: {
             input: {
               format: { type: "audio/pcmu" },
+              // Telephony audio is far-field (caller's phone mic, codec
+              // compression, line noise). Tell the model to denoise
+              // accordingly before VAD + transcription.
+              noise_reduction: { type: "far_field" },
               turn_detection: {
                 type: "server_vad",
-                threshold: 0.5,
-                prefix_padding_ms: 300,
+                // Slightly lower threshold catches quieter speech onset over
+                // a phone line; longer prefix_padding ensures the first
+                // syllable isn't clipped before VAD fires.
+                threshold: 0.4,
+                prefix_padding_ms: 500,
                 silence_duration_ms: 500,
               },
               transcription,
