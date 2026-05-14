@@ -110,6 +110,18 @@ interface BridgeSession {
    * back into the inbound track and double it in the mixed recording.
    */
   assistantSpeaking?: boolean;
+  /**
+   * Caller audio frames that arrived from Twilio before the OpenAI WS finished
+   * its handshake. Flushed in the openaiWs "open" handler so the first ~1s of
+   * speech is preserved.
+   */
+  pendingCallerAudio?: string[];
+  /** Diagnostic counters logged at session end. */
+  stats?: {
+    callerFramesReceived: number;
+    callerFramesForwarded: number;
+    callerFramesBuffered: number;
+  };
   /** Per-session recorder; finalizes to disk when the call ends. */
   recorder: SessionRecorder;
 }
@@ -253,6 +265,8 @@ fastify.post("/api/call", async (request, reply) => {
     events: new EventEmitter(),
     autoStarted: false,
     ended: false,
+    pendingCallerAudio: [],
+    stats: { callerFramesReceived: 0, callerFramesForwarded: 0, callerFramesBuffered: 0 },
     recorder: new SessionRecorder({
       id: sessionId,
       to,
@@ -342,6 +356,8 @@ fastify.post("/api/incoming/prepare", async (request, reply) => {
     events: new EventEmitter(),
     autoStarted: false,
     ended: false,
+    pendingCallerAudio: [],
+    stats: { callerFramesReceived: 0, callerFramesForwarded: 0, callerFramesBuffered: 0 },
     recorder: new SessionRecorder({
       id: sessionId,
       personaId,
@@ -436,7 +452,7 @@ fastify.all("/twiml-incoming", async (request, reply) => {
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
-    <Stream url="${wsUrl}/media-stream/${sessionId}">
+    <Stream url="${wsUrl}/media-stream/${sessionId}" track="inbound_track">
       <Parameter name="session" value="${sessionId}" />
     </Stream>
   </Connect>
@@ -480,7 +496,7 @@ fastify.all<{ Querystring: { session?: string } }>("/twiml", async (request, rep
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
-    <Stream url="${wsUrl}/media-stream/${sessionId}">
+    <Stream url="${wsUrl}/media-stream/${sessionId}" track="inbound_track">
       <Parameter name="session" value="${sessionId}" />
     </Stream>
   </Connect>
@@ -651,6 +667,23 @@ function bridgeAudio(session: BridgeSession) {
       }),
     );
 
+    // Flush any caller audio that arrived from Twilio before this handler ran.
+    // (Twilio's media stream starts the instant <Connect> is parsed; openaiWs
+    //  is still completing its TLS + WS handshake during the first frames.)
+    const buffered = session.pendingCallerAudio ?? [];
+    if (buffered.length > 0) {
+      console.log(
+        `[bridge] flushing ${buffered.length} buffered caller frame(s) for session ${session.id}`,
+      );
+      for (const payload of buffered) {
+        openaiWs.send(
+          JSON.stringify({ type: "input_audio_buffer.append", audio: payload }),
+        );
+        if (session.stats) session.stats.callerFramesForwarded++;
+      }
+      session.pendingCallerAudio = [];
+    }
+
     // If Twilio's "start" event arrived before this open handler ran, the
     // streamSid is already set but response.create was skipped (because
     // readyState wasn't OPEN). Fire it now so autoStart personas speak.
@@ -713,6 +746,7 @@ function bridgeAudio(session: BridgeSession) {
       case "media": {
         const payload = msg.media?.payload;
         if (payload) {
+          if (session.stats) session.stats.callerFramesReceived++;
           // Skip recording the caller leg while the assistant is talking to
           // avoid mic-pickup echo of the assistant doubling in mixed.wav.
           // OpenAI still needs the live audio for VAD / barge-in.
@@ -721,6 +755,12 @@ function bridgeAudio(session: BridgeSession) {
           }
           if (openaiWs.readyState === WebSocket.OPEN) {
             openaiWs.send(JSON.stringify({ type: "input_audio_buffer.append", audio: payload }));
+            if (session.stats) session.stats.callerFramesForwarded++;
+          } else {
+            // OpenAI WS still handshaking — buffer the audio so we don't lose
+            // the first second of caller speech. The "open" handler flushes.
+            (session.pendingCallerAudio ??= []).push(payload);
+            if (session.stats) session.stats.callerFramesBuffered++;
           }
         }
         break;
@@ -867,6 +907,12 @@ function emitStatus(session: BridgeSession, status: string, extra: object = {}) 
 function endSession(session: BridgeSession, reason: string) {
   if (session.ended) return;
   session.ended = true;
+  if (session.stats) {
+    const { callerFramesReceived, callerFramesForwarded, callerFramesBuffered } = session.stats;
+    console.log(
+      `[bridge] session ${session.id} ending (${reason}); caller frames received=${callerFramesReceived} forwarded=${callerFramesForwarded} buffered=${callerFramesBuffered}`,
+    );
+  }
   emitStatus(session, "ended", { reason });
   try {
     session.openaiWs?.close();
